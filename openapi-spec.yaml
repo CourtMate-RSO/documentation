@@ -1,0 +1,778 @@
+openapi: 3.0.0
+info:
+  title: CourtMate API
+  description: Complete API documentation for CourtMate microservices platform
+  version: 1.0.0
+  contact:
+    name: CourtMate Team
+    email: support@courtmate.com
+
+servers:
+  - url: https://courtmate.duckdns.org
+    description: Production server
+  - url: http://74.248.1.160
+    description: Direct IP access
+
+tags:
+  - name: Court Service
+    description: Facility and court management
+  - name: User Service
+    description: Authentication and user management
+  - name: Booking Service
+    description: Reservation management
+  - name: Notification Service
+    description: Email notifications
+
+paths:
+  # ==================== COURT SERVICE ====================
+  /api/courts/health:
+    get:
+      tags:
+        - Court Service
+      summary: Health check
+      description: Check if the court service is running
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: court-service
+
+  /api/courts/nearby:
+    post:
+      tags:
+        - Court Service
+      summary: Find nearby courts
+      description: Get courts within a specified radius from a location using PostGIS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - latitude
+                - longitude
+                - radius_km
+              properties:
+                latitude:
+                  type: number
+                  format: float
+                  example: 46.0569
+                  description: Latitude of search location
+                longitude:
+                  type: number
+                  format: float
+                  example: 14.5058
+                  description: Longitude of search location
+                radius_km:
+                  type: number
+                  format: float
+                  example: 5.0
+                  description: Search radius in kilometers
+      responses:
+        '200':
+          description: List of nearby courts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  courts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Facility'
+                  total_count:
+                    type: integer
+                    example: 5
+                  search_location:
+                    $ref: '#/components/schemas/LocationInput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/courts/{facility_id}:
+    get:
+      tags:
+        - Court Service
+      summary: Get facility by ID
+      description: Retrieve detailed information about a specific facility
+      parameters:
+        - name: facility_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the facility
+      responses:
+        '200':
+          description: Facility details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/courts/:
+    post:
+      tags:
+        - Court Service
+      summary: Create new facility
+      description: Create a new sports facility (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacilityCreate'
+      responses:
+        '201':
+          description: Facility created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Facility'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ==================== USER SERVICE ====================
+  /api/users/health:
+    get:
+      tags:
+        - User Service
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /api/users/auth/signup:
+    post:
+      tags:
+        - User Service
+      summary: User registration
+      description: Register a new user with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: SecurePassword123
+                  minLength: 8
+                first_name:
+                  type: string
+                  example: John
+                last_name:
+                  type: string
+                  example: Doe
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User signed up successfully
+                  user:
+                    $ref: '#/components/schemas/User'
+                  session:
+                    $ref: '#/components/schemas/AuthSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: User with this email already exists
+
+  /api/users/auth/login:
+    post:
+      tags:
+        - User Service
+      summary: User login
+      description: Authenticate user with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: SecurePassword123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Login successful
+                  access_token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                    example: 3600
+                  token_type:
+                    type: string
+                    example: bearer
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Invalid email or password
+
+  /api/users/auth/google:
+    post:
+      tags:
+        - User Service
+      summary: Google OAuth login
+      description: Authenticate user with Google ID token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id_token
+              properties:
+                id_token:
+                  type: string
+                  description: Google OAuth ID token
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /api/users/auth/refresh:
+    post:
+      tags:
+        - User Service
+      summary: Refresh access token
+      description: Get a new access token using refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users/user/me:
+    get:
+      tags:
+        - User Service
+      summary: Get current user
+      description: Get profile of authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users/user/update:
+    put:
+      tags:
+        - User Service
+      summary: Update user profile
+      description: Update authenticated user's profile information
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==================== BOOKING SERVICE ====================
+  /api/bookings/health:
+    get:
+      tags:
+        - Booking Service
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+
+  /api/bookings/reservation:
+    post:
+      tags:
+        - Booking Service
+      summary: Create reservation
+      description: Create a new court reservation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - facility_id
+                - start_time
+                - end_time
+              properties:
+                facility_id:
+                  type: string
+                  format: uuid
+                  example: 123e4567-e89b-12d3-a456-426614174000
+                start_time:
+                  type: string
+                  format: date-time
+                  example: 2026-01-15T14:00:00Z
+                end_time:
+                  type: string
+                  format: date-time
+                  example: 2026-01-15T16:00:00Z
+      responses:
+        '201':
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Time slot already booked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Time slot is already booked
+
+  /api/bookings/reservation/user:
+    get:
+      tags:
+        - Booking Service
+      summary: Get user's reservations
+      description: Get all reservations for authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of reservations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reservations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Reservation'
+                  total_count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/bookings/reservation/{reservation_id}:
+    get:
+      tags:
+        - Booking Service
+      summary: Get reservation by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reservation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reservation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Booking Service
+      summary: Cancel reservation
+      description: Cancel an existing reservation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reservation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reservation cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Reservation cancelled successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== NOTIFICATION SERVICE ====================
+  /api/notifications/health:
+    get:
+      tags:
+        - Notification Service
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+
+  /api/notifications/send:
+    post:
+      tags:
+        - Notification Service
+      summary: Send notification
+      description: Send email notification (internal use)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                type:
+                  type: string
+                  enum: [booking_confirmation, booking_cancellation, booking_reminder]
+                email:
+                  type: string
+                  format: email
+                data:
+                  type: object
+      responses:
+        '200':
+          description: Notification sent
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login/signup
+
+  schemas:
+    LocationInput:
+      type: object
+      required:
+        - latitude
+        - longitude
+        - radius_km
+      properties:
+        latitude:
+          type: number
+          format: float
+          example: 46.0569
+        longitude:
+          type: number
+          format: float
+          example: 14.5058
+        radius_km:
+          type: number
+          format: float
+          example: 5.0
+
+    FacilityLocation:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: float
+        longitude:
+          type: number
+          format: float
+
+    Facility:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+        name:
+          type: string
+          example: City Sports Center
+        location:
+          $ref: '#/components/schemas/FacilityLocation'
+        address_line:
+          type: string
+          example: 123 Main Street
+        city:
+          type: string
+          example: Ljubljana
+        country:
+          type: string
+          example: Slovenia
+        image:
+          type: string
+          format: uri
+          example: https://example.com/image.jpg
+        distance_km:
+          type: number
+          format: float
+          example: 1.2
+          description: Distance from search location (only in nearby search)
+
+    FacilityCreate:
+      type: object
+      required:
+        - name
+        - location
+        - address_line
+        - city
+        - country
+      properties:
+        name:
+          type: string
+          example: New Sports Center
+        location:
+          $ref: '#/components/schemas/FacilityLocation'
+        address_line:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+        image:
+          type: string
+          format: uri
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        created_at:
+          type: string
+          format: date-time
+
+    AuthSession:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: JWT access token
+        refresh_token:
+          type: string
+          description: Refresh token for getting new access token
+        expires_in:
+          type: integer
+          example: 3600
+          description: Token expiration time in seconds
+        token_type:
+          type: string
+          example: bearer
+
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        facility_id:
+          type: string
+          format: uuid
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+          example: confirmed
+        created_at:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad request - Invalid input
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Invalid request format
+
+    Unauthorized:
+      description: Unauthorized - Missing or invalid token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Not authenticated
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Resource not found
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Internal server error
